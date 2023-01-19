@@ -1,0 +1,144 @@
+name: CD
+
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - 'v*.*.*' # Enforce Semantic Versioning
+
+jobs:
+  get_modules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: List Java modules
+        id: echo-modules
+        run: echo "modules=$(cat .java_modules)" >> $GITHUB_OUTPUT
+
+    outputs:
+      modules: ${{ steps.echo-modules.outputs.modules }}
+  
+  build_jre:
+    needs: get_modules
+    uses: yetanalytics/runtimer/.github/workflows/runtimer.yml@0.1.2-java-11-temurin
+    with:
+      java-version: '11'
+      java-distribution: 'temurin'
+      java-modules: ${{ needs.get_modules.outputs.modules }}
+  
+  build:
+    runs-on: ubuntu-latest
+    needs: build_jre
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Setup CI Environment
+      uses: yetanalytics/actions/setup-env@v0.0.4
+
+    # BUILD WITHOUT RUNTIME
+    - name: Build Bundle
+      run: make bundle BUNDLE_RUNTIMES=false
+
+    # GET RUNTIMES FROM ARTIFACTS
+    - name: Download ubuntu-latest Artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: ubuntu-20.04-jre
+
+    - name: Download macOS-latest Artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: macos-11-jre
+
+    - name: Download windows-latest Artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: windows-2022-jre
+
+    # UNZIP RUNTIMES INTO OS-SPECIFIC RUNTIME DIRS
+    - name: Unzip the runtimes
+      run: |
+        mkdir -p target/bundle/runtimes
+        unzip ubuntu-20.04-jre.zip -d target/bundle/runtimes
+        mv target/bundle/runtimes/ubuntu-20.04 target/bundle/runtimes/linux
+        unzip macos-11-jre.zip -d target/bundle/runtimes
+        mv target/bundle/runtimes/macos-11 target/bundle/runtimes/macos
+        unzip windows-2022-jre.zip -d target/bundle/runtimes
+        mv target/bundle/runtimes/windows-2022 target/bundle/runtimes/windows
+
+    # ARCHIVE BUNDLE - LABEL WITH COMMIT SHA OR TAG NAME
+    - name: Compress Bundle
+      run: | # Need to cd so that the zip file doesn't contain the parent dirs
+        cd target/bundle
+        zip -r ../../lrsql.zip ./
+
+    - name: Archive Bundle (Branch Pushes)
+      if: ${{ github.ref_type == 'branch' }}
+      uses: actions/upload-artifact@v3
+      with:
+        name: lrsql-artifact-${{ github.sha }}
+        path: lrsql.zip
+
+    - name: Archive Bundle (Tag Pushes)
+      if: ${{ github.ref_type == 'tag' }}
+      uses: actions/upload-artifact@v3
+      with:
+        name: lrsql-artifact-${{ github.ref_name }}
+        path: lrsql.zip
+  
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ github.ref_type == 'tag' }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Download Bundle Artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: lrsql-artifact-${{ github.ref_name }}
+    
+    - name: Unzip Bundle Artifact
+      run: |
+        mkdir -p target/bundle
+        unzip lrsql.zip -d target/bundle
+
+    - name: Craft Draft Release
+      uses: softprops/action-gh-release@v1
+      with:
+        # Defaults:
+        # name: [tag name]
+        # tag_name: github.ref
+        body: "## Release Notes\nTODO: Create great release notes!"
+        draft: true
+        files: lrsql.zip
+
+    - name: Deploy Documentation
+      uses: JamesIves/github-pages-deploy-action@v4.4.1
+      with:
+        branch: gh-pages
+        folder: target/bundle/doc
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_TOKEN }}
+
+    - name: Extract metadata (tags, labels) for Docker
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: yetanalytics/lrsql
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v3
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
