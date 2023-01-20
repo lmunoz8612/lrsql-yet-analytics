@@ -143,9 +143,6 @@
 (s/def ::http-port nat-int?)
 (s/def ::ssl-port nat-int?)
 
-(s/def ::allow-all-origins boolean?)
-(s/def ::allowed-origins (s/nilable (s/coll-of string?)))
-
 (s/def ::jwt-exp-time pos-int?)
 (s/def ::jwt-exp-leeway nat-int?)
 
@@ -173,8 +170,6 @@
                    ::ssl-port
                    ::enable-http
                    ::enable-http2
-                   ::allow-all-origins
-                   ::allowed-origins
                    ::url-prefix
                    ::key-alias
                    ::key-password

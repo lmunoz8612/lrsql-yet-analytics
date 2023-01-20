@@ -8,15 +8,10 @@
 
 (defn system
   "Return a lrsql system with configuration specified by the `profile`
-   keyword. Optional kwarg ``conf-overrides`` takes a map where the key is a vec
-   of a key location in config map, and the value is an override."
-  [backend profile & {:keys [conf-overrides]}]
-  (let [profile-config
+   keyword."
+  [backend profile]
+  (let [config
         (read-config profile)
-        config (reduce (fn [agg [key val]]
-                         (assoc-in agg key val))
-                       profile-config
-                       (seq conf-overrides))
         initial-sys ; init without configuration
         (component/system-map
          ;; Logger is required by backend so it happens first

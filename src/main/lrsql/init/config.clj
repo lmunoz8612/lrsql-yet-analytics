@@ -2,7 +2,6 @@
   (:require [cheshire.core :as json]
             [clojure.java.io :as io]
             [aero.core :as aero]
-            [clojure.string :refer [split]]
             [camel-snake-kebab.core :as csk])
   (:import [java.io File]))
 
@@ -36,12 +35,6 @@
 (defn- resolver
   [_ include]
   (io/resource (str config-path-prefix include)))
-
-(defmethod aero/reader 'array
-  [_ _ value]
-  (if (empty? value)
-    nil
-    (split value #",")))
 
 (defn read-config*
   "Read `config.edn` with the given value of `profile`. Valid
